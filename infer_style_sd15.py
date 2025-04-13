@@ -43,6 +43,7 @@ else:
     neg_content_emb = None
 
 # generate image with content subtraction
+# ?! 比较好奇为什么只有sd15有这部分 - neg_content_emb - nashi
 images = ip_model.generate(pil_image=image,
                            prompt="a cat, masterpiece, best quality, high quality",
                            negative_prompt= "text, watermark, lowres, low quality, worst quality, deformed, glitch, low contrast, noisy, saturation, blurry",

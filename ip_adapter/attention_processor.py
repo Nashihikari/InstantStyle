@@ -312,6 +312,7 @@ class IPAttnProcessor2_0(torch.nn.Module):
         attention_mask=None,
         temb=None,
     ):
+        # ! encoder_hidden_states 是什么 - nashi
         residual = hidden_states
 
         if attn.spatial_norm is not None:
@@ -327,6 +328,7 @@ class IPAttnProcessor2_0(torch.nn.Module):
             hidden_states.shape if encoder_hidden_states is None else encoder_hidden_states.shape
         )
 
+        # ! 好像一般不会在ip保持或者风格保持任务重使用attn_mask - nashi
         if attention_mask is not None:
             attention_mask = attn.prepare_attention_mask(attention_mask, sequence_length, batch_size)
             # scaled_dot_product_attention expects attention_mask shape to be
@@ -344,7 +346,9 @@ class IPAttnProcessor2_0(torch.nn.Module):
             # get encoder_hidden_states, ip_hidden_states
             end_pos = encoder_hidden_states.shape[1] - self.num_tokens
             encoder_hidden_states, ip_hidden_states = (
+                # split text prompt's feature - nashi
                 encoder_hidden_states[:, :end_pos, :],
+                # split image prompt's feature - nashi
                 encoder_hidden_states[:, end_pos:, :],
             )
             if attn.norm_cross:
@@ -354,7 +358,7 @@ class IPAttnProcessor2_0(torch.nn.Module):
         value = attn.to_v(encoder_hidden_states)
 
         inner_dim = key.shape[-1]
-        head_dim = inner_dim // attn.heads
+        head_dim = inner_dim // attn.head
 
         query = query.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
 
@@ -391,6 +395,7 @@ class IPAttnProcessor2_0(torch.nn.Module):
             ip_hidden_states = ip_hidden_states.to(query.dtype)
 
             hidden_states = hidden_states + self.scale * ip_hidden_states
+            # !:check一下维度 - nashi 4/10
 
         # linear proj
         hidden_states = attn.to_out[0](hidden_states)
@@ -522,6 +527,7 @@ class CNAttnProcessor2_0:
             encoder_hidden_states = hidden_states
         else:
             end_pos = encoder_hidden_states.shape[1] - self.num_tokens
+            # control net中也加入text prompt features
             encoder_hidden_states = encoder_hidden_states[:, :end_pos]  # only use text
             if attn.norm_cross:
                 encoder_hidden_states = attn.norm_encoder_hidden_states(encoder_hidden_states)

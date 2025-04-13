@@ -96,6 +96,8 @@ class IPAdapter:
         unet = self.pipe.unet
         attn_procs = {}
         for name in unet.attn_processors.keys():
+            # attn1 is self-attention - nashi
+            # attn2 is cross-attention - nashi
             cross_attention_dim = None if name.endswith("attn1.processor") else unet.config.cross_attention_dim
             if name.startswith("mid_block"):
                 hidden_size = unet.config.block_out_channels[-1]
@@ -105,12 +107,14 @@ class IPAdapter:
             elif name.startswith("down_blocks"):
                 block_id = int(name[len("down_blocks.")])
                 hidden_size = unet.config.block_out_channels[block_id]
+            # 如果是self-attn，继承原先的attn processor - nashi
             if cross_attention_dim is None:
                 attn_procs[name] = AttnProcessor()
             else:
                 selected = False
                 for block_name in self.target_blocks:
-                    if block_name in name:
+                    # sub str in complete str - nashi
+                    if block_name in name: 
                         selected = True
                         break
                 if selected:
@@ -128,6 +132,7 @@ class IPAdapter:
                         num_tokens=self.num_tokens,
                         skip=True
                     ).to(self.device, dtype=torch.float16)
+        # attn_procs is a dict, key is the name of the layer, value is the attn processor: {name: processor} - nashi
         unet.set_attn_processor(attn_procs)
         if hasattr(self.pipe, "controlnet"):
             if isinstance(self.pipe.controlnet, MultiControlNetModel):
@@ -162,6 +167,10 @@ class IPAdapter:
             clip_image_embeds = clip_image_embeds.to(self.device, dtype=torch.float16)
         
         if content_prompt_embeds is not None:
+            '''
+            从论文中来看，这部分就是将 （内容与风格耦合的image encoder特征） 减去{-} （仅代表内容的 text encoder特征）
+            然后得到仅保留到风格的图像特征，使用cross-attention融合。
+            '''
             clip_image_embeds = clip_image_embeds - content_prompt_embeds
 
         image_prompt_embeds = self.image_proj_model(clip_image_embeds)
@@ -187,6 +196,9 @@ class IPAdapter:
         neg_content_emb=None,
         **kwargs,
     ):
+        '''
+        neg_content_emb is content_prompt_embeds in {func: get_image_embeds}
+        '''
         self.set_scale(scale)
 
         if pil_image is not None:
@@ -204,6 +216,9 @@ class IPAdapter:
         if not isinstance(negative_prompt, List):
             negative_prompt = [negative_prompt] * num_prompts
 
+        # image_prompt_embeds is cfg's image prompt embeds
+        # uncond_image_prompt_embeds is cfg's uncond image prompt embeds
+        # 采用两者混合进行生成，保证生成样本的丰富性
         image_prompt_embeds, uncond_image_prompt_embeds = self.get_image_embeds(
             pil_image=pil_image, clip_image_embeds=clip_image_embeds, content_prompt_embeds=neg_content_emb
         )
@@ -221,6 +236,8 @@ class IPAdapter:
                 do_classifier_free_guidance=True,
                 negative_prompt=negative_prompt,
             )
+            # 在instantstyle的流程里，
+            # 此时 text prompt embeds和 image prompt embeds已经解耦合
             prompt_embeds = torch.cat([prompt_embeds_, image_prompt_embeds], dim=1)
             negative_prompt_embeds = torch.cat([negative_prompt_embeds_, uncond_image_prompt_embeds], dim=1)
 
@@ -259,6 +276,7 @@ class IPAdapterXL(IPAdapter):
 
         num_prompts = 1 if isinstance(pil_image, Image.Image) else len(pil_image)
 
+        # “best quality, high quality” 是否也被包含在 “style” 中
         if prompt is None:
             prompt = "best quality, high quality"
         if negative_prompt is None:
@@ -280,7 +298,7 @@ class IPAdapterXL(IPAdapter):
                     ) = self.pipe.encode_prompt(
                         neg_content_prompt,
                         num_images_per_prompt=num_samples,
-                        do_classifier_free_guidance=True,
+                        do_classifier_free_guidance=True, # ?:cfg在当前模型肯定是被使用的 - nashi
                         negative_prompt=negative_prompt,
                     )
                     pooled_prompt_embeds_ *= neg_content_scale
